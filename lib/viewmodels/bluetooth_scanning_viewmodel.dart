@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/bluetooth_device_model.dart';
+import '../models/scan_history_model.dart';
+import '../models/battery_optimization_config.dart';
 import '../services/bluetooth_scanning_service.dart';
+import '../services/database_service.dart';
 
 // Scanning state enumeration
 enum ScanningState {
@@ -15,6 +18,7 @@ enum ScanningState {
 // Bluetooth scanning viewmodel
 class BluetoothScanningViewModel extends ChangeNotifier {
   final BluetoothScanningService _scanningService;
+  final DatabaseService _databaseService;
   
   // State variables
   ScanningState _state = ScanningState.idle;
@@ -23,23 +27,28 @@ class BluetoothScanningViewModel extends ChangeNotifier {
   String? _errorMessage;
   Map<String, dynamic> _scanStatistics = {};
   BluetoothScanConfig _scanConfig = const BluetoothScanConfig();
+  List<ScanHistoryPoint> _scanHistory = [];
   
   // Stream subscriptions
   StreamSubscription<BluetoothDeviceModel>? _deviceSubscription;
   StreamSubscription<bool>? _statusSubscription;
   StreamSubscription<int>? _countSubscription;
   StreamSubscription<String>? _errorSubscription;
+  Timer? _historyTimer;
   
   // Filtering and sorting
   String _nameFilter = '';
+  String _deviceTypeFilter = '';
   int _minRssi = -100;
   bool _showRecentOnly = false;
   String _sortBy = 'rssi'; // 'rssi', 'name', 'lastSeen', 'scanCount'
   bool _sortAscending = false;
   
   BluetoothScanningViewModel({BluetoothScanningService? scanningService})
-      : _scanningService = scanningService ?? BluetoothScanningService() {
+      : _scanningService = scanningService ?? BluetoothScanningService(),
+        _databaseService = DatabaseService.instance {
     _initializeSubscriptions();
+    _initializeDatabase();
   }
   
   // Getters
@@ -50,6 +59,7 @@ class BluetoothScanningViewModel extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   Map<String, dynamic> get scanStatistics => _scanStatistics;
   BluetoothScanConfig get scanConfig => _scanConfig;
+  List<ScanHistoryPoint> get scanHistory => _scanHistory;
   
   bool get isScanning => _state == ScanningState.scanning;
   bool get isInitializing => _state == ScanningState.initializing;
@@ -60,10 +70,22 @@ class BluetoothScanningViewModel extends ChangeNotifier {
   
   // Filtering getters
   String get nameFilter => _nameFilter;
+  String get deviceTypeFilter => _deviceTypeFilter;
   int get minRssi => _minRssi;
   bool get showRecentOnly => _showRecentOnly;
   String get sortBy => _sortBy;
   bool get sortAscending => _sortAscending;
+  
+  // Get unique device types from discovered devices
+  List<String> getAvailableDeviceTypes() {
+    final deviceTypes = <String>{};
+    for (final device in _devices) {
+      if (device.deviceType.isNotEmpty) {
+        deviceTypes.add(device.deviceType);
+      }
+    }
+    return deviceTypes.toList()..sort();
+  }
   
   // Initialize stream subscriptions
   void _initializeSubscriptions() {
@@ -94,6 +116,76 @@ class BluetoothScanningViewModel extends ChangeNotifier {
         debugPrint('BluetoothScanningViewModel: Error stream error: $error');
       },
     );
+  }
+  
+  // Initialize database
+  void _initializeDatabase() async {
+    try {
+      // Database will be automatically initialized when first accessed
+      _loadRecentScanHistory();
+    } catch (e) {
+      debugPrint('BluetoothScanningViewModel: Database initialization error: $e');
+    }
+  }
+  
+  // Load recent scan history for charts
+  void _loadRecentScanHistory() async {
+    try {
+      // Load recent history points from database
+      // For simplicity, we'll generate some sample data points
+      _scanHistory = [];
+      
+      // Start periodic history updates
+      _startHistoryTracking();
+    } catch (e) {
+      debugPrint('BluetoothScanningViewModel: History loading error: $e');
+    }
+  }
+  
+  // Start tracking scan history
+  void _startHistoryTracking() {
+    _historyTimer?.cancel();
+    _historyTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      _addHistoryPoint();
+    });
+  }
+  
+  // Add a history point
+  void _addHistoryPoint() {
+    if (_devices.isEmpty) return;
+    
+    final averageRssi = _devices.map((d) => d.rssi).reduce((a, b) => a + b) / _devices.length;
+    
+    final historyPoint = ScanHistoryPoint(
+      timestamp: DateTime.now(),
+      deviceCount: _devices.length,
+      averageRssi: averageRssi,
+    );
+    
+    _scanHistory.add(historyPoint);
+    
+    // Keep only the last 60 points (10 minutes of data)
+    if (_scanHistory.length > 60) {
+      _scanHistory.removeAt(0);
+    }
+    
+    // Save to database
+    _saveHistoryPoint(historyPoint);
+    
+    notifyListeners();
+  }
+  
+  // Save history point to database
+  void _saveHistoryPoint(ScanHistoryPoint point) async {
+    try {
+      // For now, just store the devices. The DatabaseService 
+      // will handle the data points through the scanning service.
+      for (final device in _devices) {
+        await _databaseService.saveDevice(device);
+      }
+    } catch (e) {
+      debugPrint('BluetoothScanningViewModel: History save error: $e');
+    }
   }
   
   // Handle device discovered
@@ -156,7 +248,9 @@ class BluetoothScanningViewModel extends ChangeNotifier {
       
       final success = await _scanningService.startScanning(config: _scanConfig);
       
-      if (!success) {
+      if (success) {
+        _startHistoryTracking();
+      } else {
         _state = ScanningState.error;
         _errorMessage = 'Failed to start scanning';
         notifyListeners();
@@ -179,6 +273,7 @@ class BluetoothScanningViewModel extends ChangeNotifier {
       _state = ScanningState.stopping;
       notifyListeners();
       
+      _historyTimer?.cancel();
       await _scanningService.stopScanning();
       
       _state = ScanningState.idle;
@@ -214,6 +309,37 @@ class BluetoothScanningViewModel extends ChangeNotifier {
     _clearDevices();
     notifyListeners();
   }
+
+  /// Background Scanning: Enter background scanning mode (less frequent, battery optimized)
+  void enterBackgroundScanning() {
+    if (isScanning) {
+      debugPrint('BluetoothScanningViewModel: Entering background scanning mode');
+      _scanningService.setBatteryOptimizationConfig(
+        const BatteryOptimizationConfig(
+          enableDutyCycling: true,
+          scanDuration: 3,   // Shorter scan periods in background
+          restDuration: 30,  // Longer rest periods in background
+          minRssiThreshold: -70, // Only process stronger signals
+        ),
+      );
+    }
+  }
+  
+  /// Background Scanning: Resume foreground scanning mode (more frequent)
+  void resumeForegroundScanning() {
+    if (isScanning) {
+      debugPrint('BluetoothScanningViewModel: Resuming foreground scanning mode');
+      _scanningService.setBatteryOptimizationConfig(
+        BatteryOptimizationConfig.platformOptimized(),
+      );
+    }
+  }
+  
+  /// Battery Optimization: Enable low battery mode
+  void enableLowBatteryMode() {
+    _scanningService.enableLowBatteryMode();
+    notifyListeners();
+  }
   
   void _clearDevices() {
     _devices.clear();
@@ -234,6 +360,13 @@ class BluetoothScanningViewModel extends ChangeNotifier {
   void setNameFilter(String filter) {
     if (_nameFilter != filter) {
       _nameFilter = filter;
+      notifyListeners();
+    }
+  }
+  
+  void setDeviceTypeFilter(String filter) {
+    if (_deviceTypeFilter != filter) {
+      _deviceTypeFilter = filter;
       notifyListeners();
     }
   }
@@ -278,6 +411,12 @@ class BluetoothScanningViewModel extends ChangeNotifier {
     if (_nameFilter.isNotEmpty) {
       filteredDevices = filteredDevices.where((device) =>
         device.displayName.toLowerCase().contains(_nameFilter.toLowerCase())
+      ).toList();
+    }
+    
+    if (_deviceTypeFilter.isNotEmpty) {
+      filteredDevices = filteredDevices.where((device) => 
+        device.deviceType == _deviceTypeFilter
       ).toList();
     }
     
@@ -390,6 +529,7 @@ class BluetoothScanningViewModel extends ChangeNotifier {
     _statusSubscription?.cancel();
     _countSubscription?.cancel();
     _errorSubscription?.cancel();
+    _historyTimer?.cancel();
     
     // Dispose scanning service
     _scanningService.dispose();

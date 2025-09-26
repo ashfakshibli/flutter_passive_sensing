@@ -1,8 +1,9 @@
 import 'dart:async';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
+
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../models/bluetooth_device_model.dart';
+import '../models/battery_optimization_config.dart';
+import 'database_service.dart';
 
 // Bluetooth scanning configuration
 class BluetoothScanConfig {
@@ -46,8 +47,16 @@ class BluetoothScanningService {
   BluetoothScanSession? _currentSession;
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   Timer? _scanTimer;
+  Timer? _dutyCycleTimer;
   bool _isScanning = false;
   bool _isInitialized = false;
+  bool _isInScanPhase = true; // For duty cycling
+  
+  // Database service for persistence
+  final DatabaseService _databaseService;
+  
+  // Battery optimization configuration
+  BatteryOptimizationConfig _batteryConfig = BatteryOptimizationConfig.platformOptimized();
   
   // Getters
   Stream<BluetoothDeviceModel> get deviceDiscovered => _scanResultController.stream;
@@ -60,6 +69,89 @@ class BluetoothScanningService {
   int get discoveredDeviceCount => _discoveredDevices.length;
   List<BluetoothDeviceModel> get discoveredDevices => _discoveredDevices.values.toList();
   BluetoothScanSession? get currentSession => _currentSession;
+  
+  // Constructor with optional database service
+  BluetoothScanningService({DatabaseService? databaseService})
+      : _databaseService = databaseService ?? DatabaseService.instance;
+  
+  /// Battery Optimization: Configure battery saving settings
+  void setBatteryOptimizationConfig(BatteryOptimizationConfig config) {
+    _batteryConfig = config;
+    print('$_logTag: Battery optimization configured: $config');
+  }
+  
+  /// Battery Optimization: Enable low battery mode
+  void enableLowBatteryMode() {
+    setBatteryOptimizationConfig(BatteryOptimizationConfig.lowBattery);
+  }
+  
+  /// Battery Optimization: Check if device should be processed based on RSSI
+  bool _shouldProcessDevice(int rssi) {
+    return rssi >= _batteryConfig.minRssiThreshold;
+  }
+  
+  /// Battery Optimization: Start duty cycle scanning (scan X seconds, rest Y seconds)
+  void _startDutyCycleScanning() {
+    if (!_batteryConfig.enableDutyCycling) return;
+    
+    _dutyCycleTimer = Timer.periodic(
+      Duration(seconds: _batteryConfig.scanDuration + _batteryConfig.restDuration),
+      (timer) => _performDutyCycle(),
+    );
+    
+    // Start with scan phase
+    _isInScanPhase = true;
+    _performDutyCycle();
+  }
+  
+  /// Battery Optimization: Perform one duty cycle (scan -> rest -> scan)
+  void _performDutyCycle() async {
+    if (_isInScanPhase) {
+      // Start scanning phase
+      print('$_logTag: Duty cycle - Starting ${_batteryConfig.scanDuration}s scan phase');
+      await _startActualScan();
+      
+      // Schedule rest phase
+      Timer(Duration(seconds: _batteryConfig.scanDuration), () {
+        _isInScanPhase = false;
+        _pauseScanning();
+      });
+    } else {
+      // Rest phase
+      print('$_logTag: Duty cycle - Resting for ${_batteryConfig.restDuration}s');
+      Timer(Duration(seconds: _batteryConfig.restDuration), () {
+        if (_isScanning) {
+          _isInScanPhase = true;
+        }
+      });
+    }
+  }
+  
+  /// Pause scanning (for duty cycling)
+  void _pauseScanning() async {
+    await _scanSubscription?.cancel();
+    _scanSubscription = null;
+    await FlutterBluePlus.stopScan();
+    print('$_logTag: Scanning paused for battery optimization');
+  }
+  
+  /// Start actual Bluetooth scan
+  Future<void> _startActualScan() async {
+    final scanConfig = const BluetoothScanConfig();
+    
+    await FlutterBluePlus.startScan(
+      withServices: scanConfig.serviceUuids.map((uuid) => Guid(uuid)).toList(),
+      timeout: scanConfig.scanTimeout,
+    );
+    
+    _scanSubscription = FlutterBluePlus.scanResults.listen(
+      _handleScanResults,
+      onError: (error) {
+        print('$_logTag: Scan error: $error');
+        _scanErrorController.add('Scan error: $error');
+      },
+    );
+  }
   
   // Initialize the service
   Future<bool> initialize() async {
@@ -124,31 +216,29 @@ class BluetoothScanningService {
         scanSettings: scanConfig.toJson(),
       );
       
-      // Start scanning
-      await FlutterBluePlus.startScan(
-        withServices: scanConfig.serviceUuids.map((uuid) => Guid(uuid)).toList(),
-        timeout: scanConfig.scanTimeout,
-      );
+      // Save scan session to database
+      try {
+        await _databaseService.saveScanSession(_currentSession!);
+      } catch (e) {
+        print('$_logTag: Warning - Could not save scan session to database: $e');
+      }
       
-      // Listen to scan results
-      _scanSubscription = FlutterBluePlus.scanResults.listen(
-        _handleScanResults,
-        onError: (error) {
-          print('$_logTag: Scan error: $error');
-          _scanErrorController.add('Scan error: $error');
-        },
-      );
+      // Start scanning with battery optimization
+      if (_batteryConfig.enableDutyCycling) {
+        print('$_logTag: Starting duty cycle scanning (${_batteryConfig.scanDuration}s scan, ${_batteryConfig.restDuration}s rest)');
+        _startDutyCycleScanning();
+      } else {
+        print('$_logTag: Starting continuous scanning');
+        await _startActualScan();
+      }
       
-      // Set up auto-stop timer
-      _scanTimer = Timer(scanConfig.scanDuration, () {
-        print('$_logTag: Scan duration reached, stopping scan');
-        stopScanning();
-      });
+      // Note: Removed auto-stop timer for continuous scanning until user stops
+      // This improves battery life by allowing user control over scan duration
       
       _isScanning = true;
       _scanStatusController.add(true);
       
-      print('$_logTag: Bluetooth scan started successfully');
+      print('$_logTag: Bluetooth scan started successfully (battery optimized: ${_batteryConfig.enableDutyCycling})');
       return true;
     } catch (e) {
       print('$_logTag: Error starting scan: $e');
@@ -180,6 +270,16 @@ class BluetoothScanningService {
       // End current session
       if (_currentSession != null) {
         _currentSession = _currentSession!.end(_discoveredDevices.keys.toList());
+        
+        // Save updated session to database
+        try {
+          await _databaseService.saveScanSession(_currentSession!);
+          
+          // Generate data point for visualization
+          await _saveDataPoint();
+        } catch (e) {
+          print('$_logTag: Warning - Could not save scan session to database: $e');
+        }
       }
       
       _isScanning = false;
@@ -193,10 +293,15 @@ class BluetoothScanningService {
   }
   
   // Handle scan results
-  void _handleScanResults(List<ScanResult> results) {
+  void _handleScanResults(List<ScanResult> results) async {
     for (final result in results) {
       try {
         final deviceId = result.device.remoteId.toString();
+        
+        // Battery Optimization: Filter out weak signals to reduce processing
+        if (!_shouldProcessDevice(result.rssi)) {
+          continue; // Skip processing weak signals to save battery
+        }
         
         if (_discoveredDevices.containsKey(deviceId)) {
           // Update existing device
@@ -204,6 +309,13 @@ class BluetoothScanningService {
           final updatedDevice = existingDevice.updateFromScanResult(result);
           _discoveredDevices[deviceId] = updatedDevice;
           _scanResultController.add(updatedDevice);
+          
+          // Save device detection to database
+          try {
+            await _saveDeviceDetection(updatedDevice);
+          } catch (e) {
+            print('$_logTag: Warning - Could not save device detection: $e');
+          }
         } else {
           // Add new device
           final newDevice = BluetoothDeviceModel.fromScanResult(result);
@@ -212,11 +324,57 @@ class BluetoothScanningService {
           _deviceCountController.add(_discoveredDevices.length);
           
           print('$_logTag: New device discovered: ${newDevice.displayName} (${newDevice.id}) RSSI: ${newDevice.rssi}');
+          
+          // Save new device and detection to database
+          try {
+            await _databaseService.saveDevice(newDevice);
+            await _saveDeviceDetection(newDevice);
+          } catch (e) {
+            print('$_logTag: Warning - Could not save device to database: $e');
+          }
         }
       } catch (e) {
         print('$_logTag: Error processing scan result: $e');
       }
     }
+  }
+  
+  // Save device detection to database
+  Future<void> _saveDeviceDetection(BluetoothDeviceModel device) async {
+    if (_currentSession != null) {
+      await _databaseService.saveDeviceDetection(
+        sessionId: _currentSession!.id,
+        device: device,
+      );
+    }
+  }
+  
+  // Save aggregated data point for visualization
+  Future<void> _saveDataPoint() async {
+    if (_discoveredDevices.isEmpty) return;
+    
+    final devices = _discoveredDevices.values.toList();
+    final deviceCount = devices.length;
+    final rssiValues = devices.map((d) => d.rssi).toList();
+    final averageRssi = rssiValues.isNotEmpty 
+        ? rssiValues.reduce((a, b) => a + b) / rssiValues.length 
+        : null;
+    final minRssi = rssiValues.isNotEmpty ? rssiValues.reduce((a, b) => a < b ? a : b) : null;
+    final maxRssi = rssiValues.isNotEmpty ? rssiValues.reduce((a, b) => a > b ? a : b) : null;
+    final uniqueDeviceTypes = devices.map((d) => d.deviceType).toSet().length;
+    final scanDuration = _currentSession?.sessionDuration.inSeconds;
+    
+    final dataPoint = DataPoint(
+      timestamp: DateTime.now(),
+      deviceCount: deviceCount,
+      averageRssi: averageRssi,
+      minRssi: minRssi,
+      maxRssi: maxRssi,
+      uniqueDeviceTypes: uniqueDeviceTypes,
+      scanDuration: scanDuration,
+    );
+    
+    await _databaseService.saveDataPoint(dataPoint);
   }
   
   // Clear discovered devices
@@ -317,6 +475,7 @@ class BluetoothScanningService {
     }
     
     _scanTimer?.cancel();
+    _dutyCycleTimer?.cancel();
     _scanSubscription?.cancel();
     
     _scanResultController.close();

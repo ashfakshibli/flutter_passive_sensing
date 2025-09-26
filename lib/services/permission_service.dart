@@ -75,7 +75,6 @@ class PermissionService {
       case BluetoothAdapterState.unavailable:
       case BluetoothAdapterState.turningOn:
       case BluetoothAdapterState.turningOff:
-      default:
         return PermissionResult(
           permission: AppPermission.bluetooth,
           status: PermissionStatus.provisional,

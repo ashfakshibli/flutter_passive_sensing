@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/bluetooth_device_model.dart';
 import '../viewmodels/bluetooth_scanning_viewmodel.dart';
 import '../services/bluetooth_scanning_service.dart';
+import 'simple_charts_widget.dart';
 
 // Main Bluetooth scanning screen
 class BluetoothScanningScreen extends StatelessWidget {
@@ -46,16 +47,6 @@ class BluetoothScanningScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const PopupMenuItem(
-                value: 'export',
-                child: Row(
-                  children: [
-                    Icon(Icons.download),
-                    SizedBox(width: 8),
-                    Text('Export Data'),
-                  ],
-                ),
-              ),
             ],
           ),
         ],
@@ -63,6 +54,7 @@ class BluetoothScanningScreen extends StatelessWidget {
       body: const Column(
         children: [
           ScanningStatusCard(),
+          SimpleChartsWidget(),
           ScanningFilters(),
           Expanded(child: DeviceList()),
         ],
@@ -88,9 +80,6 @@ class BluetoothScanningScreen extends StatelessWidget {
         break;
       case 'clear':
         _showClearConfirmation(context, viewModel);
-        break;
-      case 'export':
-        _exportData(context, viewModel);
         break;
     }
   }
@@ -125,12 +114,6 @@ class BluetoothScanningScreen extends StatelessWidget {
     );
   }
 
-  void _exportData(BuildContext context, BluetoothScanningViewModel viewModel) {
-    // TODO: Implement data export functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Export feature coming soon')),
-    );
-  }
 }
 
 // Scanning status card
@@ -329,71 +312,156 @@ class ScanningFilters extends StatelessWidget {
       builder: (context, viewModel, child) {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
+          child: Column(
             children: [
-              Expanded(
-                child: TextField(
-                  decoration: const InputDecoration(
-                    hintText: 'Filter by name...',
-                    prefixIcon: Icon(Icons.search),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  onChanged: viewModel.setNameFilter,
-                ),
-              ),
-              const SizedBox(width: 8),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.sort),
-                tooltip: 'Sort options',
-                onSelected: (value) => _handleSortChange(viewModel, value),
-                itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: 'rssi',
-                    child: Row(
-                      children: [
-                        const Icon(Icons.signal_cellular_alt),
-                        const SizedBox(width: 8),
-                        const Text('Signal Strength'),
-                        if (viewModel.sortBy == 'rssi') 
-                          Icon(viewModel.sortAscending ? Icons.arrow_upward : Icons.arrow_downward),
-                      ],
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      decoration: const InputDecoration(
+                        hintText: 'Filter by name...',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onChanged: viewModel.setNameFilter,
                     ),
                   ),
-                  PopupMenuItem(
-                    value: 'name',
-                    child: Row(
-                      children: [
-                        const Icon(Icons.sort_by_alpha),
-                        const SizedBox(width: 8),
-                        const Text('Name'),
-                        if (viewModel.sortBy == 'name')
-                          Icon(viewModel.sortAscending ? Icons.arrow_upward : Icons.arrow_downward),
-                      ],
-                    ),
+                  const SizedBox(width: 8),
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.tune),
+                    tooltip: 'Filter & Sort options',
+                    onSelected: (value) => _handleFilterAction(viewModel, value),
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'rssi_strong',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.signal_cellular_4_bar),
+                            const SizedBox(width: 8),
+                            Text('Strong Signals Only (>-60dBm)'),
+                            if (viewModel.minRssi > -70) const Icon(Icons.check),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'rssi_medium',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.signal_cellular_alt),
+                            const SizedBox(width: 8),
+                            Text('Medium+ Signals (>-80dBm)'),
+                            if (viewModel.minRssi == -80) const Icon(Icons.check),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'rssi_all',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.signal_cellular_alt),
+                            const SizedBox(width: 8),
+                            Text('All Signal Strengths'),
+                            if (viewModel.minRssi <= -100) const Icon(Icons.check),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      // Dynamic device type filters based on discovered devices
+                      ...viewModel.getAvailableDeviceTypes().map((deviceType) => PopupMenuItem(
+                        value: 'type_$deviceType',
+                        child: Row(
+                          children: [
+                            Icon(_getDeviceTypeIcon(deviceType)),
+                            const SizedBox(width: 8),
+                            Text('${deviceType}s'),
+                            if (viewModel.deviceTypeFilter == deviceType) const Icon(Icons.check),
+                          ],
+                        ),
+                      )),
+                      if (viewModel.getAvailableDeviceTypes().isNotEmpty)
+                        PopupMenuItem(
+                          value: 'type_all',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.devices),
+                              const SizedBox(width: 8),
+                              const Text('All Device Types'),
+                              if (viewModel.deviceTypeFilter.isEmpty) const Icon(Icons.check),
+                            ],
+                          ),
+                        ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: 'sort_rssi',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.signal_cellular_alt),
+                            const SizedBox(width: 8),
+                            const Text('Sort by Signal Strength'),
+                            if (viewModel.sortBy == 'rssi') 
+                              Icon(viewModel.sortAscending ? Icons.arrow_upward : Icons.arrow_downward),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'sort_name',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.sort_by_alpha),
+                            const SizedBox(width: 8),
+                            const Text('Sort by Name'),
+                            if (viewModel.sortBy == 'name')
+                              Icon(viewModel.sortAscending ? Icons.arrow_upward : Icons.arrow_downward),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  PopupMenuItem(
-                    value: 'lastSeen',
-                    child: Row(
-                      children: [
-                        const Icon(Icons.access_time),
-                        const SizedBox(width: 8),
-                        const Text('Last Seen'),
-                        if (viewModel.sortBy == 'lastSeen')
-                          Icon(viewModel.sortAscending ? Icons.arrow_upward : Icons.arrow_downward),
-                      ],
+                  IconButton(
+                    icon: Icon(
+                      viewModel.showRecentOnly ? Icons.history : Icons.history_outlined,
+                      color: viewModel.showRecentOnly ? Colors.blue : null,
                     ),
+                    tooltip: 'Show recent devices only',
+                    onPressed: () => viewModel.setShowRecentOnly(!viewModel.showRecentOnly),
                   ),
                 ],
               ),
-              IconButton(
-                icon: Icon(
-                  viewModel.showRecentOnly ? Icons.filter_alt : Icons.filter_alt_outlined,
-                  color: viewModel.showRecentOnly ? Colors.blue : null,
+              // Filter status indicator
+              if (viewModel.minRssi > -100 || viewModel.nameFilter.isNotEmpty || viewModel.deviceTypeFilter.isNotEmpty || viewModel.showRecentOnly)
+                Container(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Wrap(
+                    spacing: 4,
+                    children: [
+                      if (viewModel.minRssi > -100)
+                        Chip(
+                          label: Text('RSSI > ${viewModel.minRssi}dBm'),
+                          deleteIcon: const Icon(Icons.close, size: 16),
+                          onDeleted: () => viewModel.setMinRssi(-100),
+                        ),
+                      if (viewModel.nameFilter.isNotEmpty)
+                        Chip(
+                          label: Text('Name: "${viewModel.nameFilter}"'),
+                          deleteIcon: const Icon(Icons.close, size: 16),
+                          onDeleted: () => viewModel.setNameFilter(''),
+                        ),
+                      if (viewModel.deviceTypeFilter.isNotEmpty)
+                        Chip(
+                          label: Text('Type: ${viewModel.deviceTypeFilter}'),
+                          deleteIcon: const Icon(Icons.close, size: 16),
+                          onDeleted: () => viewModel.setDeviceTypeFilter(''),
+                        ),
+                      if (viewModel.showRecentOnly)
+                        Chip(
+                          label: const Text('Recent only'),
+                          deleteIcon: const Icon(Icons.close, size: 16),
+                          onDeleted: () => viewModel.setShowRecentOnly(false),
+                        ),
+                    ],
+                  ),
                 ),
-                tooltip: 'Show recent only',
-                onPressed: () => viewModel.setShowRecentOnly(!viewModel.showRecentOnly),
-              ),
             ],
           ),
         );
@@ -401,13 +469,62 @@ class ScanningFilters extends StatelessWidget {
     );
   }
 
-  void _handleSortChange(BluetoothScanningViewModel viewModel, String sortBy) {
-    if (viewModel.sortBy == sortBy) {
-      // Toggle sort direction
-      viewModel.setSortBy(sortBy, ascending: !viewModel.sortAscending);
-    } else {
-      // Change sort field
-      viewModel.setSortBy(sortBy, ascending: false);
+  void _handleFilterAction(BluetoothScanningViewModel viewModel, String action) {
+    switch (action) {
+      // RSSI Filtering
+      case 'rssi_strong':
+        viewModel.setMinRssi(-60); // Strong signals only
+        break;
+      case 'rssi_medium':
+        viewModel.setMinRssi(-80); // Medium+ signals
+        break;
+      case 'rssi_all':
+        viewModel.setMinRssi(-100); // All signals
+        break;
+      
+      // Device Type Filtering (Based on dynamically discovered device types)
+      case String deviceTypeAction when deviceTypeAction.startsWith('type_'):
+        final deviceType = deviceTypeAction.substring(5); // Remove 'type_' prefix
+        if (deviceType == 'all') {
+          viewModel.setDeviceTypeFilter('');
+        } else {
+          viewModel.setDeviceTypeFilter(deviceType);
+        }
+        break;
+      
+      // Sorting
+      case 'sort_rssi':
+        if (viewModel.sortBy == 'rssi') {
+          viewModel.setSortBy('rssi', ascending: !viewModel.sortAscending);
+        } else {
+          viewModel.setSortBy('rssi', ascending: false);
+        }
+        break;
+      case 'sort_name':
+        if (viewModel.sortBy == 'name') {
+          viewModel.setSortBy('name', ascending: !viewModel.sortAscending);
+        } else {
+          viewModel.setSortBy('name', ascending: true);
+        }
+        break;
+    }
+  }
+
+  IconData _getDeviceTypeIcon(String deviceType) {
+    switch (deviceType.toLowerCase()) {
+      case 'hid device':
+        return Icons.keyboard;
+      case 'heart rate monitor':
+        return Icons.favorite;
+      case 'battery service':
+        return Icons.battery_std;
+      case 'generic access':
+      case 'generic attribute':
+        return Icons.bluetooth;
+      case 'device information':
+        return Icons.info;
+      default:
+        return Icons.device_unknown;
     }
   }
 }

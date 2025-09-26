@@ -44,170 +44,111 @@ class HomeView extends StatelessWidget {
 }
 
 // Main application view (shown after permissions are granted)
-class MainAppView extends StatelessWidget {
+class MainAppView extends StatefulWidget {
   const MainAppView({super.key});
 
   @override
+  State<MainAppView> createState() => _MainAppViewState();
+}
+
+class _MainAppViewState extends State<MainAppView> {
+  @override
+  void initState() {
+    super.initState();
+    
+    // Check permissions when the widget is first created
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final viewModel = Provider.of<PermissionViewModel>(context, listen: false);
+      viewModel.checkBluetoothPermissions();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Bluetooth Passive Sensing'),
-        actions: [
-          Consumer<PermissionViewModel>(
-            builder: (context, viewModel, child) {
-              return IconButton(
-                icon: Icon(
-                  viewModel.hasBluetoothPermissions 
-                    ? Icons.bluetooth_connected 
-                    : Icons.bluetooth_disabled,
-                  color: viewModel.hasBluetoothPermissions 
-                    ? Colors.green 
-                    : Colors.red,
-                ),
-                onPressed: () {
-                  viewModel.checkBluetoothPermissions();
-                  _showPermissionStatus(context, viewModel);
-                },
-                tooltip: 'Check Permissions',
-              );
-            },
+    return Consumer<PermissionViewModel>(
+      builder: (context, viewModel, child) {
+        if (viewModel.hasBluetoothPermissions) {
+          // Show the scanning interface directly
+          return const BluetoothScanningScreen();
+        }
+        
+        // Show permission request screen
+        return Scaffold(
+          appBar: AppBar(
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            title: const Text('Bluetooth Passive Sensing'),
           ),
-        ],
-      ),
-      body: Consumer<PermissionViewModel>(
-        builder: (context, viewModel, child) {
-          return Center(
+          body: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
+              children: [
                 Icon(
-                  Icons.bluetooth_searching,
+                  Icons.bluetooth_disabled,
                   size: 64,
-                  color: viewModel.hasBluetoothPermissions 
-                    ? Colors.green 
-                    : Colors.blue,
+                  color: Colors.red,
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Bluetooth Passive Sensing',
+                  'Permissions Required',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  viewModel.hasBluetoothPermissions
-                    ? 'Ready for Bluetooth scanning'
-                    : 'Permissions required for Bluetooth scanning',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: viewModel.hasBluetoothPermissions 
-                      ? Colors.green 
-                      : Colors.grey,
-                  ),
+                  'This app needs Bluetooth and Location permissions to scan for nearby devices',
+                  style: Theme.of(context).textTheme.bodyLarge,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
-                
-                if (viewModel.hasBluetoothPermissions) ...[
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const BluetoothScanningScreen(),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Start Scanning'),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () => _showPermissionStatus(context, viewModel),
-                    icon: const Icon(Icons.info),
-                    label: const Text('View Permissions'),
-                  ),
-                ] else ...[
-                  ElevatedButton.icon(
-                    onPressed: () async {
-                      await viewModel.requestBluetoothPermissions();
-                    },
-                    icon: const Icon(Icons.security),
-                    label: const Text('Grant Permissions'),
-                  ),
-                ],
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    final success = await viewModel.requestBluetoothPermissions();
+                    if (!success) {
+                      // If permissions were denied, show option to go to settings
+                      _showPermissionDeniedDialog(context, viewModel);
+                    }
+                  },
+                  icon: const Icon(Icons.security),
+                  label: const Text('Grant Permissions'),
+                ),
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () => _showPermissionDeniedDialog(context, viewModel),
+                  icon: const Icon(Icons.settings),
+                  label: const Text('Open Settings'),
+                ),
               ],
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
-  void _showPermissionStatus(BuildContext context, PermissionViewModel viewModel) {
+  void _showPermissionDeniedDialog(BuildContext context, PermissionViewModel viewModel) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Permission Status'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(viewModel.getPermissionStatusDescription()),
-            const SizedBox(height: 16),
-            
-            if (viewModel.bluetoothPermissions != null) ...[
-              const Text('Details:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              
-              _buildStatusItem(
-                'Bluetooth', 
-                viewModel.bluetoothPermissions!.bluetooth.isGranted,
-              ),
-              
-              _buildStatusItem(
-                'Location', 
-                viewModel.bluetoothPermissions!.location.isGranted,
-              ),
-              
-              if (viewModel.bluetoothPermissions!.bluetoothScan != null)
-                _buildStatusItem(
-                  'Bluetooth Scan', 
-                  viewModel.bluetoothPermissions!.bluetoothScan!.isGranted,
-                ),
-            ],
-          ],
+        title: const Text('Permissions Required'),
+        content: const Text(
+          'To scan for Bluetooth devices, this app needs:\n\n'
+          '• Bluetooth permission\n'
+          '• Location permission (required by Android for Bluetooth scanning)\n\n'
+          'Please enable these permissions in Settings and return to the app.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
+            child: const Text('Cancel'),
           ),
-          if (!viewModel.hasBluetoothPermissions)
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                viewModel.requestBluetoothPermissions();
-              },
-              child: const Text('Request Permissions'),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusItem(String name, bool granted) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Icon(
-            granted ? Icons.check_circle : Icons.cancel,
-            color: granted ? Colors.green : Colors.red,
-            size: 16,
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await viewModel.openAppSettings();
+            },
+            child: const Text('Open Settings'),
           ),
-          const SizedBox(width: 8),
-          Text(name),
         ],
       ),
     );
