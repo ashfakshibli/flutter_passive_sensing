@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 import '../viewmodels/permission_viewmodel.dart';
+import '../viewmodels/bluetooth_scanning_viewmodel.dart';
+import '../models/battery_optimization_config.dart';
 
 class PermissionWidget extends StatefulWidget {
   final Widget child;
@@ -43,6 +45,18 @@ class _PermissionWidgetState extends State<PermissionWidget>
     if (state == AppLifecycleState.resumed) {
       // Refresh permissions when app resumes (user might have changed them in settings)
       context.read<PermissionViewModel>().refreshPermissions();
+      
+      // Background Scanning: Resume foreground scanning mode
+      final scanningViewModel = context.read<BluetoothScanningViewModel>();
+      if (scanningViewModel.isScanning) {
+        scanningViewModel.resumeForegroundScanning();
+      }
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      // Background Scanning: Switch to background scanning mode
+      final scanningViewModel = context.read<BluetoothScanningViewModel>();
+      if (scanningViewModel.isScanning) {
+        scanningViewModel.enterBackgroundScanning();
+      }
     }
   }
 
