@@ -339,7 +339,7 @@ class ScanningFilters extends StatelessWidget {
                           children: [
                             const Icon(Icons.signal_cellular_4_bar),
                             const SizedBox(width: 8),
-                            Text('Strong Signals Only (>-60dBm)'),
+                            Text('Strong Signals Only (> -60dBm)'),
                             if (viewModel.minRssi > -70) const Icon(Icons.check),
                           ],
                         ),

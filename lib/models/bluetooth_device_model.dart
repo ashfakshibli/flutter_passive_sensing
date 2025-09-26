@@ -92,11 +92,6 @@ class BluetoothDeviceModel {
 
   // Get device type from manufacturer data or service UUIDs
   String get deviceType {
-    // Try to determine device type from manufacturer data
-    if (manufacturerData.containsKey('76')) { // Apple
-      return 'Apple Device';
-    }
-    
     // Check for common service UUIDs
     for (final serviceUuid in serviceUuids) {
       final uuid = serviceUuid.toLowerCase();
