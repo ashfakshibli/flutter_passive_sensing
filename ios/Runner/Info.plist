@@ -49,7 +49,5 @@
 	<string>This app uses Bluetooth to scan for nearby devices for passive sensing research.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>This app uses Bluetooth to scan for nearby devices for passive sensing research.</string>
-	<key>NSBluetoothCentralUsageDescription</key>
-	<string>This app uses Bluetooth to scan for nearby devices for passive sensing research.</string>
 </dict>
 </plist>
