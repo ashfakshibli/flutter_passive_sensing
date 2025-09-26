@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'viewmodels/permission_viewmodel.dart';
+import 'viewmodels/bluetooth_scanning_viewmodel.dart';
 import 'widgets/permission_widget.dart';
+import 'widgets/bluetooth_scanning_screen.dart';
 
 void main() {
   runApp(const BluetoothPassiveSensingApp());
@@ -15,6 +17,7 @@ class BluetoothPassiveSensingApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => PermissionViewModel()),
+        ChangeNotifierProvider(create: (_) => BluetoothScanningViewModel()),
       ],
       child: MaterialApp(
         title: 'Bluetooth Passive Sensing',
@@ -109,10 +112,9 @@ class MainAppView extends StatelessWidget {
                 if (viewModel.hasBluetoothPermissions) ...[
                   ElevatedButton.icon(
                     onPressed: () {
-                      // TODO: Start Bluetooth scanning
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Bluetooth scanning will be implemented in next step'),
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const BluetoothScanningScreen(),
                         ),
                       );
                     },
