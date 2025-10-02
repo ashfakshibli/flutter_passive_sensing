@@ -1,6 +1,6 @@
 # Flutter Bluetooth Passive Sensing
 
-A cross-platform Flutter application for passive Bluetooth device sensing and data visualization, created for Dartmouth Full Stack Developer interview challenge.
+A cross-platform Flutter application for passive Bluetooth device sensing and data visualization.
 
 ## Setup Instructions
 
