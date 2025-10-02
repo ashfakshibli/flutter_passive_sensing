@@ -80,6 +80,16 @@ class BluetoothScanningService {
     print('$_logTag: Battery optimization configured: $config');
   }
   
+  /// Check if Bluetooth adapter is enabled/powered on
+  Future<bool> isBluetoothEnabled() async {
+    try {
+      return await FlutterBluePlus.isOn;
+    } catch (e) {
+      print('$_logTag: Error checking Bluetooth state: $e');
+      return false;
+    }
+  }
+  
   /// Battery Optimization: Enable low battery mode
   void enableLowBatteryMode() {
     setBatteryOptimizationConfig(BatteryOptimizationConfig.lowBattery);

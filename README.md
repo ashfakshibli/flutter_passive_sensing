@@ -149,8 +149,81 @@ class BluetoothScanningService {
 
 This implementation ensures optimal battery usage while maintaining effective Bluetooth device discovery and data collection capabilities across both iOS and Android platforms.
 
+## Testing & Verification
+
+### Tested Devices
+
+#### ✅ Android
+- **Successfully Tested On**: Samsung SM G965N (Galaxy S9+)
+- **Android Version**: Android 10 (API 29)
+- **Test Date**: October 2, 2025
+- **Status**: ✅ All features working correctly including Bluetooth scanning, permissions, data storage, visualization, and background scanning
+
+#### ✅ iOS
+- **Successfully Tested On**: iPhone (Physical Device)
+- **iOS Version**: iOS 18.6.2
+- **Test Date**: October 2, 2025
+- **Status**: ✅ All features working correctly including Bluetooth scanning, permissions, data storage, visualization, and background scanning
+
+### Screenshots & Demo Videos
+
+#### Android
+<div align="center">
+  <img src="screenshots/Android_Screenshot_20251002-191352.jpg" alt="Android Screenshot" width="300"/>
+  <p><em>Android app showing active Bluetooth scanning with 12 devices detected, real-time charts, and device list</em></p>
+</div>
+
+**📹 Android Background Scanning Demo**  
+[View Screen Recording](screenshots/Android_Screen_Recording_20251002-193558.mp4) - Demonstrates background scanning functionality, duty cycle optimization, and continuous device discovery on Android.
+
+#### iOS
+<div align="center">
+  <img src="screenshots/iOS_Screenshot.PNG" alt="iOS Screenshot" width="300"/>
+  <p><em>iOS app showing active Bluetooth scanning with 9 devices detected, real-time charts, and device list</em></p>
+</div>
+
+**📹 iOS Background Scanning Demo**  
+[View Screen Recording](screenshots/iOS_ScreenRecording_10-02-2025%2011-25-36_1.mov) - Demonstrates background scanning functionality, duty cycle optimization, and continuous device discovery on iOS.
+
+### Test Coverage
+- ✅ Bluetooth permission requests (iOS & Android)
+- ✅ Location permission requests (iOS & Android)
+- ✅ BLE device scanning and discovery (iOS & Android)
+- ✅ Real-time device list updates (iOS & Android)
+- ✅ SQLite database operations (iOS & Android)
+- ✅ Time-series data visualization with charts (iOS & Android)
+- ✅ Background scanning with duty cycle (iOS & Android)
+- ✅ Battery optimization features (iOS & Android)
+- ✅ App lifecycle management (iOS & Android)
+- ✅ RSSI signal strength monitoring (iOS & Android)
+- ✅ Device filtering and search (iOS & Android)
+- ✅ Bluetooth adapter state checking (iOS & Android)
+
+### Verified Features
+- **Device Discovery**: Successfully detects and displays BLE devices in real-time
+- **Signal Strength**: Displays RSSI values with color-coded indicators (Green: Excellent, Orange: Good, Red: Weak)
+- **Real-time Charts**: Live updating charts showing device count and average signal strength over time
+- **Background Scanning**: Continues scanning with configurable duty cycles (tested with 80s-160s durations)
+- **Data Persistence**: All scan sessions and device data properly stored in SQLite database
+- **Cross-Platform**: Identical functionality and UI across iOS and Android platforms
+
+### Known Platform Behaviors
+- **Android 10+**: Requires location services enabled for BLE scanning (tested and working)
+- **iOS 13+**: Bluetooth permissions must be granted before scanning (tested and working)
+- **Background Scanning**: Both platforms support background scanning within their respective execution policies
+- **Permission Flow**: Smooth permission request handling on both platforms
+
+### Corner Cases Handled
+- **Bluetooth Adapter Disabled**: App checks if Bluetooth is enabled before starting scan. If disabled, displays user-friendly dialog prompting to enable Bluetooth
+- **Permission Denied**: Full-screen permission gate with "Open Settings" button for permanently denied permissions
+- **App Lifecycle**: Automatically pauses/resumes scanning when app goes to background/foreground
+- **Background Limitations**: Adjusts scan duty cycle when in background mode to comply with platform restrictions
+- **Empty Results**: Clear messaging when no devices found, with guidance to start scanning
+- **Signal Strength Variations**: Color-coded RSSI indicators adapt to signal quality changes
+- **Database Errors**: Graceful error handling with user-facing error messages
+- **Duplicate Devices**: Smart device tracking by ID to prevent duplicate entries
+
 ---
 
 Developer: Ashfak Md Shibli
 Contact: shibli.emon@gmail.com
-GitHub: https://github.com/ashfakshibli/flutter_passive_sensing
