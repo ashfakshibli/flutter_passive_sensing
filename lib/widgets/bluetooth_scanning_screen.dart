@@ -19,7 +19,7 @@ class BluetoothScanningScreen extends StatelessWidget {
             builder: (context, viewModel, child) {
               return IconButton(
                 icon: Icon(viewModel.isScanning ? Icons.stop : Icons.play_arrow),
-                onPressed: () => viewModel.toggleScanning(),
+                onPressed: () => _onScanButtonPressed(context, viewModel),
                 tooltip: viewModel.isScanning ? 'Stop Scan' : 'Start Scan',
               );
             },
@@ -62,9 +62,9 @@ class BluetoothScanningScreen extends StatelessWidget {
       floatingActionButton: Consumer<BluetoothScanningViewModel>(
         builder: (context, viewModel, child) {
           return FloatingActionButton(
-            onPressed: viewModel.isScanning ? null : () => viewModel.startScanning(),
-            backgroundColor: viewModel.isScanning ? Colors.grey : null,
-            child: Icon(viewModel.isScanning ? Icons.bluetooth_searching : Icons.bluetooth),
+            onPressed: () => _onScanButtonPressed(context, viewModel),
+            backgroundColor: viewModel.isScanning ? Colors.red : null,
+            child: Icon(viewModel.isScanning ? Icons.stop : Icons.bluetooth),
           );
         },
       ),
@@ -84,10 +84,47 @@ class BluetoothScanningScreen extends StatelessWidget {
     }
   }
 
+  // Handle scan button press with Bluetooth state check
+  Future<void> _onScanButtonPressed(BuildContext context, BluetoothScanningViewModel viewModel) async {
+    if (viewModel.isScanning) {
+      // Stop scanning
+      viewModel.stopScanning();
+    } else {
+      // Check if Bluetooth is enabled before starting
+      final isBluetoothEnabled = await viewModel.isBluetoothEnabled();
+      if (!isBluetoothEnabled) {
+        _showBluetoothDisabledDialog(context);
+        return;
+      }
+      // Start scanning
+      viewModel.startScanning();
+    }
+  }
+
   void _showScanSettings(BuildContext context) {
     showDialog(
       context: context,
       builder: (context) => const ScanSettingsDialog(),
+    );
+  }
+
+  void _showBluetoothDisabledDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Bluetooth is Off'),
+        content: const Text('Please enable Bluetooth to start scanning for devices.'),
+        actions: [
+          TextButton(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(context),
+          ),
+          TextButton(
+            child: const Text('OK'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
     );
   }
 

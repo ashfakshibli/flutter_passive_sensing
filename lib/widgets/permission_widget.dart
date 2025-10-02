@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'dart:io';
 import '../viewmodels/permission_viewmodel.dart';
 import '../viewmodels/bluetooth_scanning_viewmodel.dart';
-import '../models/battery_optimization_config.dart';
 
 class PermissionWidget extends StatefulWidget {
   final Widget child;

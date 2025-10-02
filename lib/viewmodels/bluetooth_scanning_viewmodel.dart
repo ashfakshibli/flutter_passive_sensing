@@ -232,6 +232,11 @@ class BluetoothScanningViewModel extends ChangeNotifier {
     _scanStatistics = _scanningService.getScanStatistics();
   }
   
+  // Check if Bluetooth is enabled
+  Future<bool> isBluetoothEnabled() async {
+    return await _scanningService.isBluetoothEnabled();
+  }
+  
   // Start scanning
   Future<bool> startScanning({BluetoothScanConfig? config}) async {
     if (_state == ScanningState.scanning) return false;
